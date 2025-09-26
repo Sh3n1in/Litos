@@ -1,5 +1,5 @@
 ---
-title: '博客中文测试标题'
+title: 'IHDR[宽高隐写]'
 description: '博客中文测试简介描述'
 pubDate: 2025-09-27
 author: 'Shenlin'
@@ -10,6 +10,103 @@ tags: ['Litos', 'Documentation']
 
 这个页面是一个中文测试。
 
-### 标题
+# IHDR[宽高隐写]
 
-测试内容
+例题：
+
+[https://www.nssctf.cn/problem/3883](https://www.nssctf.cn/problem/3883)
+
+[https://drive.google.com/file/d/1mpvUpJS1yOREPecvtZNSzpj6mXboqRte/view?usp=drive_link](https://drive.google.com/file/d/1mpvUpJS1yOREPecvtZNSzpj6mXboqRte/view?usp=drive_link)
+
+## 重点：
+
+PNG文件的宽高的CRC32值在HEX的29位-32位字节，但是根据PNG中实际记录的IHDR计算出来的CRC32对不上，而PNG长宽是IHDR字节控制的，所以存在截断情况。要恢复实际内容中CRC32字节的宽高内容
+
+要计算 PNG 图像中 IHDR 数据块的 CRC 值，你需要对 IHDR 数据块的数据和类型进行计算，而不是整个数据块。
+
+计算过程通常分为以下步骤：
+
+数据块类型：IHDR 数据块的类型名称是固定的，为 IHDR（四个大写英文字母）。
+
+数据块数据：IHDR 数据块的数据部分包含了图像的基本信息，包括：
+
+宽度 (4 字节)
+
+高度 (4 字节)
+
+位深度 (1 字节)
+
+颜色类型 (1 字节)
+
+压缩方法 (1 字节)
+
+过滤方法 (1 字节)
+
+隔行扫描方法 (1 字节)
+这些数据加起来总共是 13 个字节。
+
+你需要将 IHDR 这四个字节和后面 13 个字节的数据拼接起来，然后对这 17 个字节的数据进行 CRC32 运算，最终得到 IHDR 数据块的 CRC 值。
+
+## Shell
+
+```python
+xxd -s 29 -l 4 -c 4 #查看PNG文件真正IHDR
+dd if=XXX.png bs=1 skip=12 count=17 > 1.bin & crc32 1.bin | awk '{printf toupper($1)}'
+```
+
+## Script
+
+```python
+import zlib
+import struct
+
+def calculate_ihdr_crc32(file_path):
+    """
+    计算并验证 PNG 文件中 IHDR 数据块的 CRC32 校验值。
+
+    参数:
+        file_path (str): PNG 文件的路径。
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            # 读取 PNG 文件的前 33 个字节，IHDR 块的所有信息都在这里
+            # 8字节的PNG签名 + 4字节的IHDR长度 + 4字节的IHDR类型 + 13字节的IHDR数据 + 4字节的IHDR CRC32
+            header_data = f.read(33)
+            
+            # 从第 12 个字节开始，获取 IHDR 类型和数据，共 17 个字节
+            # 4字节的IHDR类型 + 13字节的IHDR数据
+            ihdr_chunk_data = header_data[12:29]
+            
+            # 计算 CRC32 校验值
+            calculated_crc32 = zlib.crc32(ihdr_chunk_data) & 0xFFFFFFFF
+            
+            # 提取文件中已有的原始 CRC32 值
+            # 原始 CRC32 值位于文件的第 29 到 32 个字节（索引从 0 开始）
+            original_crc32_bytes = header_data[29:33]
+            original_crc32 = struct.unpack('>I', original_crc32_bytes)[0]
+            
+            print(f"IHDR 数据块的原始 CRC32 值: 0x{original_crc32:08X}")
+            print(f"IHDR 数据块的计算 CRC32 值: 0x{calculated_crc32:08X}")
+            
+            if calculated_crc32 == original_crc32:
+                print("\n结果: IHDR 校验值匹配，文件可能没有损坏。")
+                return True
+            else:
+                print("\n结果: IHDR 校验值不匹配，文件可能已损坏或被篡改。")
+                return False
+
+    except FileNotFoundError:
+        print(f"错误: 文件 '{file_path}' 未找到。")
+        return False
+
+# 请将 'your_image.png' 替换为你的 PNG 文件路径
+file_name = 'your_image.png'
+calculate_ihdr_crc32(file_name)
+
+```
+
+## Tools
+
+[1]. 自动检测宽高工具 [https://github.com/AabyssZG/Deformed-Image-Restorer#](https://github.com/AabyssZG/Deformed-Image-Restorer#)
+
+[2]. 基于第一性原理的PNG隐写术 [https://blog.xpnsec.com/png-steganography/](https://blog.xpnsec.com/png-steganography/)
