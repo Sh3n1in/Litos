@@ -17,7 +17,7 @@ export const SITE: Site = {
   description:
     'Litos is a modern blogging theme built on Astro.js, designed for developers. It supports multiple post layouts, photo displays, project displays, and more, providing an elegant user experience and powerful customization capabilities.',
   website: 'https://litos.vercel.app/',
-  lang: 'en',
+  lang: 'zh',
   base: '/',
   author: 'Dnzzk2',
   ogImage: '/og-image.webp',
