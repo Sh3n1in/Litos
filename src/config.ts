@@ -19,7 +19,7 @@ export const SITE: Site = {
   website: 'https://litos.vercel.app/',
   lang: 'zh',
   base: '/',
-  author: 'Dnzzk2',
+  author: '神林',
   ogImage: '/og-image.webp',
 }
 
