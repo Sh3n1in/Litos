@@ -150,6 +150,11 @@
     @apply min-h-screen bg-background text-foreground;
   }
 
+  /* 图标颜色修复：确保所有Iconify图标都使用主题的前景颜色 */
+  [class^='i-'] {
+    background-color: var(--color-foreground) !important;
+  }
+
   /* 标题样式 */
   h1,
   h2,
