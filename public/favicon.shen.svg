@@ -1,13 +1,13 @@
-<svg t="1759054781269" class="icon" viewBox="0 0 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2737" width="200" height="200">
+<svg t="1759054781269" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2737" width="200" height="200">
   <style>
     /* 默认 (浅色模式) 颜色 */
-    .icon-bg { fill: hsl(0, 0%, 100%); } /* 白色背景 */
-    .icon-path { fill: hsl(225, 15%, 12%); } /* 深蓝色图标 */
+    .icon-bg { fill: white; }
+    .icon-path { fill: black; }
 
     /* 当操作系统为深色模式时应用的颜色 */
     @media (prefers-color-scheme: dark) {
-      .icon-bg { fill: hsl(240, 10%, 4%); } /* 精确匹配页面深色背景 */
-      .icon-path { fill: hsl(0, 0%, 98%); } /* 白色图标 */
+      .icon-bg { fill: black; }
+      .icon-path { fill: white; }
     }
   </style>
   <!--  下面这个矩形元素作为背景 -->
