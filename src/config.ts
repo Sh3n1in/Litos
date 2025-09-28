@@ -202,7 +202,7 @@ export const POSTS_CONFIG: PostConfig = {
     type: 'time-line',
   },
   ogImageUseCover: false,
-  postType: 'metaOnly',
+  postType: 'coverTop',
   imageDarkenInDark: true,
   readMoreText: 'Read more',
   prevPageText: 'Previous',
