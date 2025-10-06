@@ -65,18 +65,18 @@ export const FOOTER_LINKS: Link[] = [
 export const SOCIAL_LINKS: SocialLink[] = [
   {
     name: 'github',
-    url: 'https://github.com/yourname',
+    url: 'https://github.com/Sh3n1in',
     icon: 'icon-[ri--github-fill]',
     count: 11,
   },
   {
     name: 'twitter',
-    url: 'https://x.com/yourname',
+    url: 'https://x.com/sh3nl1n',
     icon: 'icon-[ri--twitter-x-fill]',
   },
   {
     name: 'bilibili',
-    url: 'https://space.bilibili.com/yourSpaceId',
+    url: 'https://space.bilibili.com/3546690906753177',
     icon: 'icon-[ri--bilibili-fill]',
   },
 ]
