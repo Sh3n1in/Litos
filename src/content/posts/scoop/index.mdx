@@ -1,0 +1,303 @@
+---
+title: '使用Scoop作为多版本环境切换器'
+description: '如何使用scoop管理windows系统中代码环境版本'
+pubDate: 2025-11-10
+author: '神林'
+cover: assets/cover.png
+recommend: true
+tags: ['Windows', 'Scoop']
+---
+
+使用Scoop作为多版本环境切换器
+
+# 使用Scoop作为多版本环境切换器
+
+# 介绍
+
+**Scoop 是一个面向 Windows 的命令行包管理器**，目标是让软件安装、更新与管理变得简单、可重复且无需管理员权限。它将应用安装在用户目录（默认 `~\\scoop`），通过“bucket”（软件仓库）提供大量常用 CLI 与 GUI 软件，支持版本锁定、缓存与一键更新。
+
+- 核心特点：
+    - 无需管理员权限，默认安装到当前用户目录。
+    - 安装透明、可移植，配置与应用彼此隔离，便于清理。
+    - 通过“bucket”扩展软件源，覆盖常见开发与日常应用。
+    - 快速更新与回收清理，保持系统整洁。
+
+---
+
+## 安装 Scoop
+
+在 PowerShell（非管理员）中执行以下步骤：
+
+1. 允许当前用户执行脚本（一次性设置）：
+    
+    ```powershell
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+    ```
+    
+2. 安装 Scoop：
+    
+    ```powershell
+    iwr -useb get.scoop.sh | iex
+    ```
+    
+3. 验证安装：
+    
+    ```powershell
+    scoop --version
+    ```
+    
+
+提示：
+
+- 如果遇到网络/TLS 问题，可在新会话重试或切换网络环境。
+- 默认会将 `~\\scoop\\shims` 加入 PATH，确保在新会话中可用。
+
+---
+
+## 快速上手：常用命令
+
+**核心用法：搜索、安装、更新、卸载**
+
+- 搜索软件：
+    
+    ```powershell
+    scoop search 7zip
+    ```
+    
+- 安装软件：
+    
+    ```powershell
+    scoop install 7zip
+    scoop install git
+    scoop install nodejs-lts
+    ```
+    
+- 查看已安装与详情：
+    
+    ```powershell
+    scoop list
+    scoop info 7zip
+    ```
+    
+- 更新（Scoop 本体与应用）：
+    
+    ```powershell
+    scoop update            # 更新 Scoop
+    scoop update *          # 更新全部应用
+    scoop update 7zip       # 更新指定应用
+    ```
+    
+- 卸载与清理：
+    
+    ```powershell
+    scoop uninstall 7zip
+    scoop cleanup *         # 清理旧版本
+    scoop cache rm *        # 清空下载缓存
+    ```
+    
+
+---
+
+## 进阶：Buckets（软件源）
+
+Scoop 通过“bucket”扩展软件范围。默认启用 `main`，可按需添加：
+
+- 查看可用与已添加的 bucket：
+    
+    ```powershell
+    scoop bucket known
+    scoop bucket list
+    ```
+    
+- 添加常用 bucket（包含大量 GUI/常用软件）：
+    
+    ```powershell
+    scoop bucket add extras
+    ```
+    
+- 示例：安装 VLC（添加 `extras` 后可直接安装）：
+    
+    ```powershell
+    scoop install vlc
+    ```
+    
+
+常见 buckets：
+
+- `main`：默认常用 CLI/工具
+- `extras`：GUI 与更多应用
+- `versions`：多版本/旧版本
+- `nerd-fonts`：开发者字体等
+
+---
+
+## 全局安装（可选）
+
+需要对所有用户可见或放到系统目录时使用全局安装（需管理员权限）：
+
+```powershell
+scoop install -g 7zip
+```
+
+---
+
+## 实用小技巧
+
+- 体检环境与依赖：
+    
+    ```powershell
+    scoop checkup
+    ```
+    
+- 固定/解锁应用版本（避免被更新）：
+    
+    ```powershell
+    scoop hold nodejs-lts
+    scoop unhold nodejs-lts
+    ```
+    
+- 查可执行文件路径：
+    
+    ```powershell
+    scoop which git
+    ```
+    
+
+---
+
+## 总结
+
+- **Scoop 让 Windows 下的软件管理更简单、可重复、可维护**。
+- 记住这几步就够用：`install → search → install → update → uninstall`。
+- 按需添加 `extras` 等 buckets，即可覆盖大多数日常与开发场景。
+
+# 多版本运行时与切换（Python / PHP / JDK / Rust / Ruby）
+
+**Scoop 的多版本机制**基于“并行安装 + shim 指向当前版本”的设计：
+
+- 每个应用以版本号安装在 `~\\scoop\\apps\\<app>\\<version>`。
+- `scoop reset <app>` 会切换 `current` 指向，从而让 PATH 中的 shim 指向目标版本。
+- 某些生态（如 Rust）更推荐使用官方版本管理器（例如 `rustup`）在同一安装下切换工具链。
+
+为便于获取不同版本，常用到如下 buckets：
+
+- **Main**（默认）：[ScoopInstaller/Main](https://github.com/ScoopInstaller/Main)
+- **Versions**（多版本/旧版本）：[ScoopInstaller/Versions](https://github.com/ScoopInstaller/Versions)
+- **Java**（各类 JDK 发行版与 LTS 系列）：[ScoopInstaller/Java](https://github.com/ScoopInstaller/Java)
+
+下面分别给出各语言的典型做法与示例。
+
+---
+
+### Python
+
+- 建议 buckets：
+    - **Main**：[ScoopInstaller/Main](https://github.com/ScoopInstaller/Main)
+    - **Versions**：[ScoopInstaller/Versions](https://github.com/ScoopInstaller/Versions)
+- 示例（安装多个大版本并切换）：
+    
+    ```powershell
+    scoop bucket add versions
+    scoop install main/python                  # 最新版 Python
+    scoop install versions/python311           # 指定大版本
+    scoop install versions/python312
+    
+    # 让 python 命令指向 3.11 对应安装
+    scoop reset python311
+    python --version
+    ```
+    
+- 提示：
+    - 多版本共存时，`scoop reset <app>` 决定 PATH 中命令落到哪一套。
+    - 项目隔离仍建议使用 `venv`/`virtualenv`。
+
+---
+
+### PHP
+
+- 建议 buckets：
+    - **Main**：[ScoopInstaller/Main](https://github.com/ScoopInstaller/Main)
+    - **Versions**：[ScoopInstaller/Versions](https://github.com/ScoopInstaller/Versions)
+- 示例（并行安装 8.2 与 8.3，按需切换）：
+    
+    ```powershell
+    scoop bucket add versions
+    scoop install versions/php82
+    scoop install versions/php83
+    
+    # 切到 8.3
+    scoop reset php83
+    php -v
+    ```
+    
+- 提示：
+    - 不同项目可通过不同 PHP 目录或容器/服务层面区分；命令行默认走当前激活版本。
+
+---
+
+### JDK（Java）
+
+- 建议 bucket：
+    - **Java**：[ScoopInstaller/Java](https://github.com/ScoopInstaller/Java)
+- 常见包名（示例）：`temurin8-jdk`、`temurin11-jdk`、`temurin17-jdk`、`temurin21-jdk`
+- 示例（安装多套 JDK 并切换激活集）：
+    
+    ```powershell
+    scoop bucket add java
+    scoop install temurin17-jdk
+    scoop install temurin21-jdk
+    
+    # 设定当前激活 JDK（JAVA_HOME/Path 由 Scoop 对应到该版本）
+    scoop reset temurin17-jdk
+    java -version
+    ```
+    
+- 提示：
+    - 也可并行安装不同发行版（Temurin/Zulu/GraalVM 等），用 `scoop reset <包名>` 选择当前生效的一套。
+
+---
+
+### Rust
+
+- 建议做法：通过 **rustup** 管理多版本工具链（Scoop 负责安装 rustup）。
+- 建议 bucket：
+    - **Main**：[ScoopInstaller/Main](https://github.com/ScoopInstaller/Main)
+- 示例（安装 rustup，并用其切换 toolchain）：
+    
+    ```powershell
+    scoop install rustup
+    
+    # 安装并切换工具链
+    rustup toolchain install stable
+    rustup toolchain install 1.77.0
+    rustup default 1.77.0
+    
+    rustc --version
+    cargo --version
+    ```
+    
+- 提示：
+    - `rustup` 支持 `stable`/`beta`/`nightly` 以及精确版本，按项目需要快速切换。
+
+---
+
+### Ruby
+
+- 建议 buckets：
+    - **Main**：[ScoopInstaller/Main](https://github.com/ScoopInstaller/Main)
+    - **Versions**：[ScoopInstaller/Versions](https://github.com/ScoopInstaller/Versions)
+- 示例（并行安装多版本 Ruby 并切换）：
+    
+    ```powershell
+    scoop bucket add versions
+    scoop install main/ruby
+    scoop install versions/ruby31
+    scoop install versions/ruby33
+    
+    # 切到 Ruby 3.1
+    scoop reset ruby31
+    ruby -v
+    ```
+    
+- 提示：
+    - 每个 Ruby 安装自带独立 gem 目录；项目层面建议配合 Bundler/Gemfile 管理依赖。
