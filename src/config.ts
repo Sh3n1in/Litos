@@ -185,9 +185,9 @@ export const GITHUB_CONFIG: GithubConfig = {
 //--- Posts Page Config ---
 export const POSTS_CONFIG: PostConfig = {
   title: 'Posts',
-  description: 'Posts by Dnzzk2',
-  introduce: 'Here, I will share the usage instructions for this theme to help you quickly use it.',
-  author: 'Dnzzk2',
+  description: 'Posts by 神林',
+  introduce: 'Posts List Page',
+  author: '神林',
   homePageConfig: {
     size: 5,
     type: 'compact',
